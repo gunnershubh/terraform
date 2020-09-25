@@ -1,0 +1,42 @@
+// def getBuildUser() {
+//    return currentBuild.rawBuild.getCause(Cause.UserIdCause).getUserId()
+// }
+pipeline {
+  agent {
+    label 'master'
+  }
+  environment {
+          BUILD_USER = ''
+          ECR_REPO = "search_api"
+          ECR_TAG = "latest"
+          DOCKERFILE_PATH = "."
+        }
+  stages {
+      stage('SCM Checkout') {
+        steps {
+//          script { BUILD_USER = getBuildUser() }
+          git branch: 'develop',
+                 credentialsId: 'gitlab_access',
+                 url: 'https://gitlab.com/phigrcdev/searchapi.git'
+        sh 'git submodule update --init --recursive'
+        }
+      }
+      stage('Build Image') {
+        steps {
+          script {
+            docker.withRegistry('https://048538763030.dkr.ecr.us-east-1.amazonaws.com','ecr:us-east-1:aws_access') {
+               docker.build("${ECR_REPO}")}
+            }
+          }
+      }
+      stage ('Docker push') {
+          steps {
+              script {
+                  docker.withRegistry('https://048538763030.dkr.ecr.us-east-1.amazonaws.com', 'ecr:us-east-1:aws_access') {
+                      docker.image("${ECR_REPO}").push("${ECR_TAG}")
+                  }
+              }
+          }
+     }
+  }
+}

@@ -1,0 +1,63 @@
+// def getBuildUser() {
+//     return currentBuild.rawBuild.getCause(Cause.UserIdCause).getUserId()
+// }
+pipeline {
+  agent {
+    label 'master'
+  }
+  environment {
+          BUILD_USER = ''
+          ECR_REPO = "demo"
+          ECR_TAG = "${BUILD_NUMBER}"
+          DOCKERFILE_PATH = "."
+        }
+  stages {
+      stage('SCM Checkout') {
+        steps {
+//          script { BUILD_USER = getBuildUser() }
+          git branch: 'master',
+                 credentialsId: 'gitlab_access',
+                 url: 'https://gitlab.com/phigrcdev/demo.git'
+        sh 'git submodule update --init --recursive'
+        }
+      }
+      stage('Build Image') {
+        steps {
+          script {
+            docker.withRegistry('https://048538763030.dkr.ecr.us-east-1.amazonaws.com','ecr:us-east-1:aws_access') {
+               docker.build("${ECR_REPO}:${ECR_TAG}")}
+            }
+          }
+      }
+      stage ('Docker push') {
+          steps {
+              script {
+                  docker.withRegistry('https://048538763030.dkr.ecr.us-east-1.amazonaws.com', 'ecr:us-east-1:aws_access') {
+                      docker.image("${ECR_REPO}:${ECR_TAG}").push("${ECR_TAG}")
+                  }
+              }
+          }
+     }
+     stage ('Deploy to Kubernetes') {
+         steps {
+             script {
+                   sh '''
+                     export PATH=$PATH:$HOME/bin
+                     kubectl get nodes
+                     kubectl set image deployment/demo demo=048538763030.dkr.ecr.us-east-1.amazonaws.com/demo:${ECR_TAG} --record
+                   '''
+                }
+             }
+         }
+      stage ('Cleanup') {
+          steps {
+             script {
+                  sh '''
+                    docker rmi ${ECR_REPO}:${ECR_TAG}
+                    docker rmi 048538763030.dkr.ecr.us-east-1.amazonaws.com/${ECR_REPO}:${ECR_TAG}
+                '''
+              }
+         }
+      }
+  }
+}
